@@ -1,0 +1,16 @@
+# Go
+backend/bin/
+*.exe
+
+# Frontend
+frontend/.next/
+frontend/node_modules/
+
+# Env files
+.env
+.env.local
+*.env
+
+# OS
+.DS_Store
+EOF

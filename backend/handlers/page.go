@@ -5,18 +5,20 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/yourusername/yoink/cache"
+	"github.com/yourusername/yoink/github"
 )
 
 type PageHandler struct {
 	redirect *RedirectHandler
+	gh       *github.Client
+	cache    *cache.Cache
 }
 
-func NewPageHandler(r *RedirectHandler) *PageHandler {
-	return &PageHandler{redirect: r}
+func NewPageHandler(r *RedirectHandler, gh *github.Client, c *cache.Cache) *PageHandler {
+	return &PageHandler{redirect: r, gh: gh, cache: c}
 }
 
-// Handle returns release JSON for the frontend to render.
-// The Next.js frontend calls this API endpoint to get release data.
 func (h *PageHandler) Handle(c *gin.Context) {
 	owner := c.Param("owner")
 	repo := c.Param("repo")
@@ -28,6 +30,8 @@ func (h *PageHandler) Handle(c *gin.Context) {
 		return
 	}
 
+	readme := h.getREADME(c, owner, repo)
+
 	c.JSON(http.StatusOK, gin.H{
 		"owner":        owner,
 		"repo":         repo,
@@ -37,5 +41,33 @@ func (h *PageHandler) Handle(c *gin.Context) {
 		"published_at": release.PublishedAt,
 		"html_url":     release.HTMLURL,
 		"assets":       release.Assets,
+		"readme":       readme,
 	})
+}
+
+func (h *PageHandler) getREADME(c *gin.Context, owner, repo string) string {
+	ctx := c.Request.Context()
+
+	// Try cache
+	cached, hit, err := h.cache.GetREADME(ctx, owner, repo)
+	if err != nil {
+		log.Printf("cache read error (readme): %v", err)
+	}
+	if hit {
+		return cached
+	}
+
+	// Fetch from GitHub
+	content, err := h.gh.GetREADME(owner, repo)
+	if err != nil {
+		log.Printf("readme fetch error for %s/%s: %v", owner, repo, err)
+		return ""
+	}
+
+	// Cache it
+	if cacheErr := h.cache.SetREADME(ctx, owner, repo, content); cacheErr != nil {
+		log.Printf("cache write error (readme): %v", cacheErr)
+	}
+
+	return content
 }

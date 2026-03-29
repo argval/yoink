@@ -3,7 +3,9 @@ package main
 import (
 	"log"
 	"os"
+	"strings"
 
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/yourusername/yoink/cache"
 	"github.com/yourusername/yoink/github"
@@ -16,9 +18,27 @@ func main() {
 
 	redirectHandler := handlers.NewRedirectHandler(ghClient, redisCache)
 	badgeHandler := handlers.NewBadgeHandler(redirectHandler)
-	pageHandler := handlers.NewPageHandler(redirectHandler)
+	pageHandler := handlers.NewPageHandler(redirectHandler, ghClient, redisCache)
 
 	r := gin.Default()
+
+	frontendOrigin := os.Getenv("FRONTEND_ORIGIN") // e.g. https://yoink.vercel.app
+	r.Use(cors.New(cors.Config{
+		AllowOriginFunc: func(origin string) bool {
+			if origin == "http://localhost:3000" {
+				return true
+			}
+			if frontendOrigin != "" && origin == frontendOrigin {
+				return true
+			}
+			// Allow any *.vercel.app preview deployment
+			return strings.HasSuffix(origin, ".vercel.app")
+		},
+		AllowMethods:     []string{"GET"},
+		AllowHeaders:     []string{"Origin"},
+		ExposeHeaders:    []string{"Location"},
+		AllowCredentials: false,
+	}))
 
 	r.GET("/dl/:owner/:repo", redirectHandler.Handle)
 	r.GET("/badge/:owner/:repo", badgeHandler.Handle)

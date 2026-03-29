@@ -80,3 +80,44 @@ func (c *Client) GetLatestRelease(owner, repo string) (*Release, error) {
 
 	return &release, nil
 }
+
+// GetREADME fetches the raw README content for a repo.
+func (c *Client) GetREADME(owner, repo string) (string, error) {
+	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/readme", owner, repo)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return "", fmt.Errorf("creating request: %w", err)
+	}
+
+	// Request raw markdown content
+	req.Header.Set("Accept", "application/vnd.github.v3.raw")
+	req.Header.Set("User-Agent", "Yoink/1.0")
+
+	if c.clientID != "" && c.clientSecret != "" {
+		q := req.URL.Query()
+		q.Set("client_id", c.clientID)
+		q.Set("client_secret", c.clientSecret)
+		req.URL.RawQuery = q.Encode()
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("fetching readme: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return "", nil // no README is fine
+	}
+	if resp.StatusCode != http.StatusOK {
+		return "", nil // non-critical, just skip
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("reading readme: %w", err)
+	}
+
+	return string(body), nil
+}

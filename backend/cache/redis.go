@@ -75,3 +75,29 @@ func (c *Cache) SetRelease(ctx context.Context, owner, repo string, release *gh.
 
 	return c.client.Set(ctx, releaseKey(owner, repo), data, c.ttl).Err()
 }
+
+func readmeKey(owner, repo string) string {
+	return fmt.Sprintf("readme:%s/%s", owner, repo)
+}
+
+func (c *Cache) GetREADME(ctx context.Context, owner, repo string) (string, bool, error) {
+	if c.client == nil {
+		return "", false, nil
+	}
+
+	data, err := c.client.Get(ctx, readmeKey(owner, repo)).Result()
+	if err == redis.Nil {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	return data, true, nil
+}
+
+func (c *Cache) SetREADME(ctx context.Context, owner, repo, content string) error {
+	if c.client == nil {
+		return nil
+	}
+	return c.client.Set(ctx, readmeKey(owner, repo), content, c.ttl).Err()
+}

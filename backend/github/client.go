@@ -81,6 +81,47 @@ func (c *Client) GetLatestRelease(owner, repo string) (*Release, error) {
 	return &release, nil
 }
 
+// GetReleaseByTag fetches a specific release by its tag name.
+func (c *Client) GetReleaseByTag(owner, repo, tag string) (*Release, error) {
+	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/tags/%s", owner, repo, tag)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+	req.Header.Set("User-Agent", "Yoink/1.0")
+
+	if c.clientID != "" && c.clientSecret != "" {
+		q := req.URL.Query()
+		q.Set("client_id", c.clientID)
+		q.Set("client_secret", c.clientSecret)
+		req.URL.RawQuery = q.Encode()
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("fetching release: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, fmt.Errorf("release tag %q not found for %s/%s", tag, owner, repo)
+	}
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("github API error (status %d): %s", resp.StatusCode, string(body))
+	}
+
+	var release Release
+	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
+		return nil, fmt.Errorf("decoding release: %w", err)
+	}
+
+	return &release, nil
+}
+
 // GetREADME fetches the raw README content for a repo.
 func (c *Client) GetREADME(owner, repo string) (string, error) {
 	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/readme", owner, repo)

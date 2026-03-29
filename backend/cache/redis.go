@@ -43,6 +43,43 @@ func releaseKey(owner, repo string) string {
 	return fmt.Sprintf("release:%s/%s", owner, repo)
 }
 
+func releaseTagKey(owner, repo, tag string) string {
+	return fmt.Sprintf("release:%s/%s@%s", owner, repo, tag)
+}
+
+func (c *Cache) GetReleaseByTag(ctx context.Context, owner, repo, tag string) (*gh.Release, error) {
+	if c.client == nil {
+		return nil, nil
+	}
+
+	data, err := c.client.Get(ctx, releaseTagKey(owner, repo, tag)).Bytes()
+	if err == redis.Nil {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	var release gh.Release
+	if err := json.Unmarshal(data, &release); err != nil {
+		return nil, err
+	}
+	return &release, nil
+}
+
+func (c *Cache) SetReleaseByTag(ctx context.Context, owner, repo, tag string, release *gh.Release) error {
+	if c.client == nil {
+		return nil
+	}
+
+	data, err := json.Marshal(release)
+	if err != nil {
+		return err
+	}
+
+	return c.client.Set(ctx, releaseTagKey(owner, repo, tag), data, c.ttl).Err()
+}
+
 func (c *Cache) GetRelease(ctx context.Context, owner, repo string) (*gh.Release, error) {
 	if c.client == nil {
 		return nil, nil // cache miss, no-op

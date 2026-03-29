@@ -15,6 +15,59 @@ const (
 	Unknown Platform = "unknown"
 )
 
+type Arch string
+
+const (
+	AMD64   Arch = "amd64"   // x86-64
+	ARM64   Arch = "arm64"   // aarch64
+	ARM     Arch = "arm"     // 32-bit ARM (armv7, armv6)
+	X86     Arch = "386"     // 32-bit x86
+	UnknownArch Arch = ""
+)
+
+// archKeywords maps each Arch to the substrings that identify it in asset filenames.
+var archKeywords = map[Arch][]string{
+	AMD64: {"amd64", "x86_64", "x86-64"},
+	ARM64: {"arm64", "aarch64"},
+	ARM:   {"armv7", "armv6", "armhf", "arm-"},
+	X86:   {"i386", "i686", "x86_32", "386"},
+}
+
+// ResolveArch returns the Arch to use for asset selection. The explicit arch
+// query-param (e.g. "amd64", "arm64") takes priority; if empty or unrecognised,
+// the function falls back to DetectArch on the User-Agent string.
+func ResolveArch(archParam, userAgent string) Arch {
+	switch strings.ToLower(strings.TrimSpace(archParam)) {
+	case "amd64", "x86_64":
+		return AMD64
+	case "arm64", "aarch64":
+		return ARM64
+	case "arm", "armv7", "armhf":
+		return ARM
+	case "386", "x86", "i386":
+		return X86
+	}
+	return DetectArch(userAgent)
+}
+
+// DetectArch attempts to derive the CPU architecture from a User-Agent string.
+// Returns UnknownArch when the UA doesn't carry enough signal.
+func DetectArch(userAgent string) Arch {
+	ua := strings.ToLower(userAgent)
+	switch {
+	case strings.Contains(ua, "arm64") || strings.Contains(ua, "aarch64"):
+		return ARM64
+	case strings.Contains(ua, "armv7") || strings.Contains(ua, "armv6") || strings.Contains(ua, "armhf"):
+		return ARM
+	case strings.Contains(ua, "x86_64") || strings.Contains(ua, "amd64") || strings.Contains(ua, "win64"):
+		return AMD64
+	case strings.Contains(ua, "i386") || strings.Contains(ua, "i686") || strings.Contains(ua, "wow64"):
+		return X86
+	default:
+		return UnknownArch
+	}
+}
+
 // DetectPlatform parses a User-Agent string to determine the client's OS.
 func DetectPlatform(userAgent string) Platform {
 	ua := strings.ToLower(userAgent)
@@ -40,36 +93,43 @@ var platformExtensions = map[Platform][]string{
 // PickAsset selects the best matching release asset for the given platform.
 // Returns nil if no suitable asset is found.
 func PickAsset(assets []github.Asset, platform Platform) *github.Asset {
+	return PickAssetForArch(assets, platform, UnknownArch)
+}
+
+// PickAssetForArch selects the best matching release asset for the given platform and
+// CPU architecture. When arch is UnknownArch, architecture is ignored and the
+// function behaves identically to PickAsset.
+func PickAssetForArch(assets []github.Asset, platform Platform, arch Arch) *github.Asset {
 	if len(assets) == 0 {
 		return nil
 	}
 
-	// Score each asset: lower is better
 	type scored struct {
-		asset github.Asset
-		rank  int
+		asset    github.Asset
+		extRank  int // lower = better extension match
+		archHit  bool // true when the asset explicitly matches the requested arch
 	}
-
-	var candidates []scored
 
 	exts, ok := platformExtensions[platform]
 	if !ok {
-		// Unknown platform — fall back to releases page (return nil)
 		return nil
 	}
+
+	var candidates []scored
 
 	for _, asset := range assets {
 		name := strings.ToLower(asset.Name)
 		if isSource(name) {
 			continue
 		}
+		if mentionsOtherPlatform(name, platform) {
+			continue
+		}
+
 		for rank, ext := range exts {
 			if strings.HasSuffix(name, strings.ToLower(ext)) {
-				// Bonus: deprioritize assets that mention another platform
-				if mentionsOtherPlatform(name, platform) {
-					continue
-				}
-				candidates = append(candidates, scored{asset: asset, rank: rank})
+				archHit := arch != UnknownArch && mentionsArch(name, arch)
+				candidates = append(candidates, scored{asset: asset, extRank: rank, archHit: archHit})
 				break
 			}
 		}
@@ -79,14 +139,45 @@ func PickAsset(assets []github.Asset, platform Platform) *github.Asset {
 		return nil
 	}
 
-	// Pick the candidate with the best (lowest) rank
+	// When we have arch context, prefer assets that explicitly mention the
+	// requested arch; break ties by extension rank.
+	if arch != UnknownArch {
+		// Check if any candidate explicitly matches the arch. If so, filter to
+		// only those; otherwise fall through to extension-rank ordering so we
+		// still return something useful.
+		var archMatches []scored
+		for _, c := range candidates {
+			if c.archHit {
+				archMatches = append(archMatches, c)
+			}
+		}
+		if len(archMatches) > 0 {
+			candidates = archMatches
+		}
+	}
+
+	// Pick the candidate with the best (lowest) extension rank.
 	best := candidates[0]
 	for _, c := range candidates[1:] {
-		if c.rank < best.rank {
+		if c.extRank < best.extRank {
 			best = c
 		}
 	}
 	return &best.asset
+}
+
+// mentionsArch returns true if the asset filename explicitly references the given arch.
+func mentionsArch(name string, arch Arch) bool {
+	keywords, ok := archKeywords[arch]
+	if !ok {
+		return false
+	}
+	for _, kw := range keywords {
+		if strings.Contains(name, kw) {
+			return true
+		}
+	}
+	return false
 }
 
 // isSource returns true if the filename looks like a source archive.

@@ -19,6 +19,7 @@ func main() {
 	redirectHandler := handlers.NewRedirectHandler(ghClient, redisCache)
 	badgeHandler := handlers.NewBadgeHandler(redirectHandler)
 	pageHandler := handlers.NewPageHandler(redirectHandler, ghClient, redisCache)
+	linkHandler := handlers.NewLinkHandler(redirectHandler)
 
 	r := gin.Default()
 
@@ -44,6 +45,7 @@ func main() {
 	r.GET("/dl/:owner/:repo/:version", redirectHandler.HandleVersioned)
 	r.GET("/badge/:owner/:repo", badgeHandler.Handle)
 	r.GET("/api/release/:owner/:repo", pageHandler.Handle)
+	r.GET("/api/link/:owner/:repo", linkHandler.Handle)
 	r.GET("/api/release/:owner/:repo/:version", pageHandler.HandleVersioned)
 
 	r.GET("/health", func(c *gin.Context) {

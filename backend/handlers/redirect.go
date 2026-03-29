@@ -30,8 +30,10 @@ func (h *RedirectHandler) Handle(c *gin.Context) {
 		return
 	}
 
-	platform := picker.DetectPlatform(c.GetHeader("User-Agent"))
-	asset := picker.PickAsset(release.Assets, platform)
+	ua := c.GetHeader("User-Agent")
+	platform := picker.DetectPlatform(ua)
+	arch := picker.ResolveArch(c.Query("arch"), ua)
+	asset := picker.PickAssetForArch(release.Assets, platform, arch)
 	if asset == nil {
 		// Fallback: redirect to the GitHub releases page
 		c.Redirect(http.StatusFound, release.HTMLURL)

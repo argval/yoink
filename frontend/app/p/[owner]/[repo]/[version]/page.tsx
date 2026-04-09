@@ -1,71 +1,32 @@
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
 import Image from "next/image";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
-import { InstallCommands } from "./install-commands";
-import { DownloadSection } from "./download-section";
-import { VersionSelector } from "./version-selector";
-import { PrereleaseToggle } from "./prerelease-toggle";
-import { AllDownloads } from "./all-downloads";
-import { ShareLinks } from "./share-links";
-
-const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:8080";
+import { InstallCommands } from "../install-commands";
+import { DownloadSection } from "../download-section";
+import { VersionSelector } from "../version-selector";
+import { PrereleaseToggle } from "../prerelease-toggle";
+import { AllDownloads } from "../all-downloads";
+import { ShareLinks } from "../share-links";
+import { getRelease } from "../page";
 
 type Props = {
-  params: Promise<{ owner: string; repo: string }>;
+  params: Promise<{ owner: string; repo: string; version: string }>;
 };
-
-type Asset = {
-  name: string;
-  browser_download_url: string;
-  size: number;
-  download_count: number;
-};
-
-type ReleaseData = {
-  owner: string;
-  repo: string;
-  tag_name: string;
-  name: string;
-  body: string;
-  published_at: string;
-  html_url: string;
-  prerelease: boolean;
-  assets: Asset[];
-  readme: string;
-};
-
-export async function getRelease(owner: string, repo: string, version?: string): Promise<ReleaseData> {
-  const path = version
-    ? `/api/release/${owner}/${repo}/${version}`
-    : `/api/release/${owner}/${repo}`;
-  let res: Response;
-  try {
-    res = await fetch(`${BACKEND_URL}${path}`, { next: { revalidate: 300 } });
-  } catch {
-    throw new Error("Couldn't reach the download service. Try again in a moment.");
-  }
-  if (res.status === 404) notFound();
-  if (res.status === 403) throw new Error("This repository is private or you don't have access.");
-  if (res.status === 429) throw new Error("GitHub API rate limit exceeded. Try again in a minute.");
-  if (!res.ok) throw new Error("Couldn't reach the download service. Try again in a moment.");
-  return res.json();
-}
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
-  const { owner, repo } = await params;
+  const { owner, repo, version } = await params;
   return {
-    title: `${repo} — Download | Yoink`,
-    description: `Download the latest release of ${owner}/${repo}`,
+    title: `${repo} ${version} — Download | Yoink`,
+    description: `Download ${owner}/${repo} version ${version}`,
   };
 }
 
-export default async function ReleasePage({ params }: Props) {
-  const { owner, repo } = await params;
-  const release = await getRelease(owner, repo);
+export default async function VersionedReleasePage({ params }: Props) {
+  const { owner, repo, version } = await params;
+  const release = await getRelease(owner, repo, version);
 
   const publishedDate = new Date(release.published_at).toLocaleDateString("en-US", {
     year: "numeric",

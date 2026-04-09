@@ -113,6 +113,39 @@ func (c *Cache) SetRelease(ctx context.Context, owner, repo string, release *gh.
 	return c.client.Set(ctx, releaseKey(owner, repo), data, c.ttl).Err()
 }
 
+func releasesKey(owner, repo string) string {
+	return fmt.Sprintf("releases:%s/%s", owner, repo)
+}
+
+func (c *Cache) GetReleases(ctx context.Context, owner, repo string) ([]gh.ReleaseSummary, error) {
+	if c.client == nil {
+		return nil, nil
+	}
+	data, err := c.client.Get(ctx, releasesKey(owner, repo)).Bytes()
+	if err == redis.Nil {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var releases []gh.ReleaseSummary
+	if err := json.Unmarshal(data, &releases); err != nil {
+		return nil, err
+	}
+	return releases, nil
+}
+
+func (c *Cache) SetReleases(ctx context.Context, owner, repo string, releases []gh.ReleaseSummary) error {
+	if c.client == nil {
+		return nil
+	}
+	data, err := json.Marshal(releases)
+	if err != nil {
+		return err
+	}
+	return c.client.Set(ctx, releasesKey(owner, repo), data, c.ttl).Err()
+}
+
 func readmeKey(owner, repo string) string {
 	return fmt.Sprintf("readme:%s/%s", owner, repo)
 }

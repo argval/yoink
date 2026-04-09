@@ -20,6 +20,7 @@ func main() {
 	badgeHandler := handlers.NewBadgeHandler(redirectHandler)
 	pageHandler := handlers.NewPageHandler(redirectHandler, ghClient, redisCache)
 	linkHandler := handlers.NewLinkHandler(redirectHandler)
+	releasesHandler := handlers.NewReleasesHandler(ghClient, redisCache)
 
 	r := gin.Default()
 
@@ -46,7 +47,9 @@ func main() {
 	r.GET("/badge/:owner/:repo", badgeHandler.Handle)
 	r.GET("/api/release/:owner/:repo", pageHandler.Handle)
 	r.GET("/api/link/:owner/:repo", linkHandler.Handle)
+	r.GET("/api/link/:owner/:repo/:version", linkHandler.HandleVersioned)
 	r.GET("/api/release/:owner/:repo/:version", pageHandler.HandleVersioned)
+	r.GET("/api/releases/:owner/:repo", releasesHandler.Handle)
 
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(200, gin.H{"status": "ok"})

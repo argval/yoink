@@ -26,7 +26,7 @@ func (h *RedirectHandler) Handle(c *gin.Context) {
 	release, err := h.getRelease(c, owner, repo)
 	if err != nil {
 		log.Printf("error fetching release for %s/%s: %v", owner, repo, err)
-		c.JSON(http.StatusBadGateway, gin.H{"error": "could not fetch release info"})
+		c.JSON(httpStatusFromError(err), gin.H{"error": err.Error()})
 		return
 	}
 
@@ -51,12 +51,14 @@ func (h *RedirectHandler) HandleVersioned(c *gin.Context) {
 	release, err := h.getReleaseByTag(c, owner, repo, version)
 	if err != nil {
 		log.Printf("error fetching release %s for %s/%s: %v", version, owner, repo, err)
-		c.JSON(http.StatusNotFound, gin.H{"error": "release version not found"})
+		c.JSON(httpStatusFromError(err), gin.H{"error": err.Error()})
 		return
 	}
 
-	platform := picker.DetectPlatform(c.GetHeader("User-Agent"))
-	asset := picker.PickAsset(release.Assets, platform)
+	ua := c.GetHeader("User-Agent")
+	platform := picker.DetectPlatform(ua)
+	arch := picker.ResolveArch(c.Query("arch"), ua)
+	asset := picker.PickAssetForArch(release.Assets, platform, arch)
 	if asset == nil {
 		c.Redirect(http.StatusFound, release.HTMLURL)
 		return
@@ -74,7 +76,7 @@ func (h *RedirectHandler) getRelease(c *gin.Context, owner, repo string) (*githu
 		return cached, nil
 	}
 
-	release, err := h.gh.GetLatestRelease(owner, repo)
+	release, err := h.gh.GetLatestRelease(c.Request.Context(), owner, repo)
 	if err != nil {
 		return nil, err
 	}
@@ -95,7 +97,7 @@ func (h *RedirectHandler) getReleaseByTag(c *gin.Context, owner, repo, tag strin
 		return cached, nil
 	}
 
-	release, err := h.gh.GetReleaseByTag(owner, repo, tag)
+	release, err := h.gh.GetReleaseByTag(c.Request.Context(), owner, repo, tag)
 	if err != nil {
 		return nil, err
 	}

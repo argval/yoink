@@ -26,7 +26,7 @@ func (h *PageHandler) Handle(c *gin.Context) {
 	release, err := h.redirect.getRelease(c, owner, repo)
 	if err != nil {
 		log.Printf("page: error fetching release for %s/%s: %v", owner, repo, err)
-		c.JSON(http.StatusBadGateway, gin.H{"error": "could not fetch release info"})
+		c.JSON(httpStatusFromError(err), gin.H{"error": err.Error()})
 		return
 	}
 
@@ -40,6 +40,7 @@ func (h *PageHandler) Handle(c *gin.Context) {
 		"body":         release.Body,
 		"published_at": release.PublishedAt,
 		"html_url":     release.HTMLURL,
+		"prerelease":   release.Prerelease,
 		"assets":       release.Assets,
 		"readme":       readme,
 	})
@@ -54,7 +55,7 @@ func (h *PageHandler) HandleVersioned(c *gin.Context) {
 	release, err := h.redirect.getReleaseByTag(c, owner, repo, version)
 	if err != nil {
 		log.Printf("page: error fetching release %s for %s/%s: %v", version, owner, repo, err)
-		c.JSON(http.StatusNotFound, gin.H{"error": "release version not found"})
+		c.JSON(httpStatusFromError(err), gin.H{"error": err.Error()})
 		return
 	}
 
@@ -68,6 +69,7 @@ func (h *PageHandler) HandleVersioned(c *gin.Context) {
 		"body":         release.Body,
 		"published_at": release.PublishedAt,
 		"html_url":     release.HTMLURL,
+		"prerelease":   release.Prerelease,
 		"assets":       release.Assets,
 		"readme":       readme,
 	})
@@ -76,7 +78,6 @@ func (h *PageHandler) HandleVersioned(c *gin.Context) {
 func (h *PageHandler) getREADME(c *gin.Context, owner, repo string) string {
 	ctx := c.Request.Context()
 
-	// Try cache
 	cached, hit, err := h.cache.GetREADME(ctx, owner, repo)
 	if err != nil {
 		log.Printf("cache read error (readme): %v", err)
@@ -85,14 +86,12 @@ func (h *PageHandler) getREADME(c *gin.Context, owner, repo string) string {
 		return cached
 	}
 
-	// Fetch from GitHub
-	content, err := h.gh.GetREADME(owner, repo)
+	content, err := h.gh.GetREADME(ctx, owner, repo)
 	if err != nil {
 		log.Printf("readme fetch error for %s/%s: %v", owner, repo, err)
 		return ""
 	}
 
-	// Cache it
 	if cacheErr := h.cache.SetREADME(ctx, owner, repo, content); cacheErr != nil {
 		log.Printf("cache write error (readme): %v", cacheErr)
 	}
